@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <title>Secure Temporary Chat</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/simple-peer/9.11.1/simplepeer.min.js"></script>
+  <style>
+    body {
+      font-family: system-ui;
+      max-width: 800px;
+      margin: 2rem auto;
+      padding: 0 1rem;
+    }
+
+    #messages {
+      height: 400px;
+      border: 1px solid #ccc;
+      margin: 1rem 0;
+      padding: 1rem;
+      overflow-y: auto;
+    }
+
+    #messageInput {
+      width: 100%;
+      padding: 0.5rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .message {
+      margin: 0.5rem 0;
+      padding: 0.5rem;
+      border-radius: 4px;
+    }
+
+    .sent {
+      background: #e3f2fd;
+      margin-left: 20%;
+    }
+
+    .received {
+      background: #f5f5f5;
+      margin-right: 20%;
+    }
+
+    #connectionInfo {
+      background: #fff3e0;
+      padding: 1rem;
+      margin: 1rem 0;
+      border-radius: 4px;
+    }
+
+    .large-button {
+      padding: 1rem 2rem;
+      font-size: 1.2rem;
+      margin: 0.5rem;
+      cursor: pointer;
+      background: #1976d2;
+      color: white;
+      border: none;
+      border-radius: 4px;
+    }
+
+    .secondary-button {
+      padding: 0.5rem 1rem;
+      margin-left: 0.5rem;
+      background: #f5f5f5;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    .large-button:hover {
+      background: #1565c0;
+    }
+
+    #connectionCode {
+      padding: 0.5rem;
+      margin-right: 0.5rem;
+      width: 60%;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>Secure Temporary Chat</h1>
+  <div id="connectionInfo">
+    <div id="initialButtons" style="text-align: center; margin: 2rem 0;">
+      <button onclick="createChat()" id="createBtn" class="large-button">Create New Chat Room</button>
+      <p style="margin: 1rem 0;">or</p>
+      <button onclick="showJoinSection()" id="joinBtn" class="large-button">Join Existing Chat Room</button>
+    </div>
+
+    <div id="creatorSection" style="display:none;">
+      <h3>Share this code with the person you want to chat with:</h3>
+      <div id="codeSection" style="margin: 1rem 0;">
+        <input type="text" id="codeDisplay" readonly style="width: 100%; margin-bottom: 0.5rem;">
+        <button onclick="copyCode()">Copy Code</button>
+      </div>
+      <p>Waiting for other person to join...</p>
+    </div>
+
+    <div id="joinSection" style="display:none">
+      <h3>Enter the code shared with you:</h3>
+      <input type="text" id="connectionCode" placeholder="Paste connection code here">
+      <button onclick="isInitiator ? handleSecondSignal() : joinChat()">Connect</button>
+      <button onclick="backToStart()" class="secondary-button">Back</button>
+    </div>
+  </div>
+  <div id="chatSection" style="display:none">
+    <div id="messages"></div>
+    <input type="text" id="messageInput" placeholder="Type a message...">
+    <button onclick="sendMessage()">Send</button>
+  </div>
+
+  <script>
+    let peer;
+    let isInitiator = false;
+
+    function initializePage() {
+      document.getElementById('initialButtons').style.display = 'block';
+      document.getElementById('creatorSection').style.display = 'none';
+      document.getElementById('joinSection').style.display = 'none';
+      document.getElementById('chatSection').style.display = 'none';
+    }
+
+    function showJoinSection() {
+      document.getElementById('initialButtons').style.display = 'none';
+      document.getElementById('joinSection').style.display = 'block';
+    }
+
+    function backToStart() {
+      initializePage();
+    }
+
+    function createChat() {
+      isInitiator = true;
+      peer = new SimplePeer({ initiator: true, trickle: false });
+      setupPeer();
+
+      document.getElementById('initialButtons').style.display = 'none';
+      document.getElementById('creatorSection').style.display = 'block';
+
+      peer.on('signal', data => {
+        console.log('Initiator generated signal:', data);
+        const code = btoa(JSON.stringify(data));
+        document.getElementById('codeDisplay').value = code;
+      });
+
+      peer.on('error', err => {
+        console.error('Initiator peer error:', err);
+      });
+    }
+
+    function copyCode() {
+      const codeDisplay = document.getElementById('codeDisplay');
+      codeDisplay.select();
+      document.execCommand('copy');
+      alert('Code copied to clipboard!');
+    }
+
+    function joinChat() {
+      const code = document.getElementById('connectionCode').value;
+      try {
+        const signalData = JSON.parse(atob(code));
+        console.log('Joiner received signal:', signalData);
+        peer = new SimplePeer({ initiator: false, trickle: false });
+        setupPeer();
+        peer.signal(signalData);
+      } catch (e) {
+        console.error('Join chat error:', e);
+        alert('Invalid connection code');
+        return;
+      }
+    }
+
+    function setupPeer() {
+      peer.on('signal', data => {
+        console.log('Peer signaling:', data);
+        if (!isInitiator) {
+          const code = btoa(JSON.stringify(data));
+          document.getElementById('joinSection').style.display = 'none';
+          document.getElementById('creatorSection').style.display = 'block';
+          document.getElementById('codeDisplay').value = code;
+          document.querySelector('#creatorSection h3').textContent = 'Send this code back to the first person:';
+          document.querySelector('#creatorSection p').textContent = 'Waiting for connection to complete...';
+        } else {
+          document.getElementById('joinSection').style.display = 'block';
+          document.getElementById('connectionCode').placeholder = 'Enter the response code from second person';
+        }
+      });
+
+      peer.on('connect', () => {
+        console.log('Peer connected!');
+        document.getElementById('connectionInfo').style.display = 'none';
+        document.getElementById('chatSection').style.display = 'block';
+        addMessage('Connected! Messages are end-to-end encrypted.', 'system');
+      });
+
+      peer.on('error', err => {
+        console.error('Peer error in setup:', err);
+      });
+
+      peer.on('close', () => {
+        console.log('Peer connection closed');
+      });
+
+      peer.on('data', data => {
+        const message = new TextDecoder().decode(data);
+        addMessage(message, 'received');
+      });
+
+      document.getElementById('messageInput').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') sendMessage();
+      });
+    }
+
+    function sendMessage() {
+      const input = document.getElementById('messageInput');
+      const message = input.value;
+      if (!message) return;
+
+      peer.send(message);
+      addMessage(message, 'sent');
+      input.value = '';
+    }
+
+    function addMessage(message, type) {
+      const messagesDiv = document.getElementById('messages');
+      const messageElement = document.createElement('div');
+      messageElement.textContent = message;
+      messageElement.className = `message ${type}`;
+      messagesDiv.appendChild(messageElement);
+      messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    }
+
+    function handleSecondSignal() {
+      const code = document.getElementById('connectionCode').value;
+      try {
+        const signalData = JSON.parse(atob(code));
+        console.log('Initiator handling second signal:', signalData);
+        peer.signal(signalData);
+        document.getElementById('joinSection').style.display = 'none';
+      } catch (e) {
+        console.error('Handle second signal error:', e);
+        alert('Invalid connection code');
+        return;
+      }
+    }
+
+    // Call initializePage when the page loads
+    initializePage();
+  </script>
+</body>
+
+</html>
